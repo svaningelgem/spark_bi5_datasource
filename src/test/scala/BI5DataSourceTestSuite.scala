@@ -1,14 +1,14 @@
+package be.salvania
 
 import java.io.File
 import java.sql.Timestamp
 import java.text.SimpleDateFormat
 import java.util.TimeZone
 
-import be.salvania.BI5BatchDataSourceReader
 import org.apache.spark.sql.functions.{col, desc}
 import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
 import org.scalatest.funsuite.AnyFunSuite
-import org.scalatest.{BeforeAndAfter}
+import org.scalatest.BeforeAndAfter
 
 
 
@@ -118,8 +118,9 @@ class BI5DataSourceTestSuite
   lazy private val LAST_RECORD_JPY = spark.sqlContext.createDataFrame(spark.sparkContext.parallelize(Seq(Row("USDJPY", new Timestamp(dateFormat.parse("2020-12-01 23:59:59.213").getTime), 108.727, 108.723, 3.25, 1.5))), myBI5schema)
 
 
+  private final val loader: ClassLoader = getClass.getClassLoader
   private def getPath(path: String) : String = {
-    val b = getClass.getResource(path).getPath
+    val b = loader.getResource(path).getPath
     val c = new File(b)
 
     c.getAbsolutePath
