@@ -1,14 +1,7 @@
 package be.salvania
 
 // Found help at:
-// http://blog.madhukaraphatak.com/spark-datasource-v2-part-3/
-// http://blog.madhukaraphatak.com/spark-datasource-v2-part-2/
-// http://shzhangji.com/blog/2018/12/08/spark-datasource-api-v2/
-// --> https://github.com/jizhang/spark-sandbox/blob/master/src/main/scala/datasource/JdbcExampleV2.scala
-// https://michalsenkyr.github.io/2017/02/spark-sql_datasource
-// https://www.slideshare.net/JayeshThakrar/apachecon-north-america-2018-creating-spark-data-sources
-// https://stackoverflow.com/questions/47604184/how-to-create-a-custom-streaming-data-source
-// how to add a non-scala dependency: https://alvinalexander.com/scala/sbt-how-to-manage-project-dependencies-in-scala/
+// https://github.com/assafmendelson/DataSourceV2/tree/master/src/main/scala/com/example/sources/readers/trivial
 
 import java.io.{DataInputStream, EOFException, File, FileInputStream}
 import java.nio.file.{FileVisitOption, Files, Path, Paths}
@@ -16,11 +9,12 @@ import java.sql.Timestamp
 import java.util
 import java.util.{Calendar, TimeZone}
 
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.sources.v2.reader.{DataReader, DataReaderFactory, DataSourceReader}
+import org.apache.spark.sql.sources.v2.reader.{DataSourceReader, InputPartition, InputPartitionReader}
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 import org.tukaani.xz.LZMAInputStream
 
 import scala.collection.JavaConverters._
@@ -71,32 +65,32 @@ class BI5BatchDataSourceReader(path: String, digits: Int, january_starts_at_0: I
     ))
   }
 
-  override def createDataReaderFactories(): util.List[DataReaderFactory[Row]] = {
+  override def planInputPartitions(): util.List[InputPartition[InternalRow]] = {
     val p = Paths.get(path)
     if (Files.isDirectory(p)) { // Only loop over the immediate directories. We'll handle the extra looping down in the Reader
       new File(path).list().map(subdir =>
-          new BI5BatchDataReaderFactory(p.resolve(subdir).toString, digits, january_starts_at_0).asInstanceOf[DataReaderFactory[Row]]
+          new BI5BatchDataSourcePartition(p.resolve(subdir).toString, digits, january_starts_at_0).asInstanceOf[InputPartition[InternalRow]]
       ).toSeq.asJava
     }
     else { // We already did our path check in the @BI5DataSource
       // It's just 1 file...
-      Seq(new BI5BatchDataReaderFactory(path, digits, january_starts_at_0).asInstanceOf[DataReaderFactory[Row]]).asJava
+      Seq(new BI5BatchDataSourcePartition(path, digits, january_starts_at_0).asInstanceOf[InputPartition[InternalRow]]).asJava
     }
   }
 }
 
 
-class BI5BatchDataReaderFactory(path: String, digits: Int, january_starts_at_0: Int)
-  extends DataReaderFactory[Row] {
+class BI5BatchDataSourcePartition(path: String, digits: Int, january_starts_at_0: Int)
+  extends InputPartition[InternalRow] {
 
-  override def createDataReader(): DataReader[Row] = {
+  override def createPartitionReader(): InputPartitionReader[InternalRow] = {
     new BI5BatchDataReader(path, digits, january_starts_at_0)
   }
 }
 
 
 class BI5BatchDataReader(path: String, digits: Int, january_starts_at_0: Int)
-  extends DataReader[Row] {
+  extends InputPartitionReader[InternalRow] {
 
   lazy private val pattern = new Regex(
     "/([a-zA-Z0-9]+)/(\\d{4})/(\\d{1,2})/(\\d{1,2})/(\\d{1,2})h_ticks.bi5$",
@@ -114,8 +108,8 @@ class BI5BatchDataReader(path: String, digits: Int, january_starts_at_0: Int)
       .filter(_.toString.toLowerCase.endsWith(".bi5"))
   }
   private var currentFile: String = _
-  private var currentDate: Timestamp = _
-  private var currentTicker: String = _
+  private var currentDate: Long = _
+  private var currentTicker: UTF8String = _
 
   private var in: DataInputStream = _
 
@@ -128,7 +122,7 @@ class BI5BatchDataReader(path: String, digits: Int, january_starts_at_0: Int)
       throw new IllegalArgumentException("Invalid path provided. Should be in the format <currency>/<YYYY>/<mm>/<dd>/<hh>h_ticks.bi5")
     )
 
-    currentTicker = _match.group("ticker")
+    currentTicker = UTF8String.fromString(_match.group("ticker"))
 
     var currentMonth: Int = _match.group("month").toInt
     if (january_starts_at_0 == 1)
@@ -144,16 +138,16 @@ class BI5BatchDataReader(path: String, digits: Int, january_starts_at_0: Int)
       .setTimeZone(TimeZone.getTimeZone("UTC"))
       .build()
 
-    currentDate = new Timestamp(dt.getTimeInMillis)
+    currentDate = dt.getTimeInMillis * 1000L
 
     in = new DataInputStream(new LZMAInputStream(new FileInputStream(currentFile)))
   }
 
   private var hasNext: Boolean = true
-  private var nextRow: Row = getNextRow
+  private var nextRow: InternalRow = getNextRow
 
   @scala.annotation.tailrec
-  private def getNextRow: Row = {
+  private def getNextRow: InternalRow = {
     while (null == in && currentPath.hasNext) {
       try {
         _setupCurrents(currentPath.next().toAbsolutePath.toString)
@@ -176,9 +170,9 @@ class BI5BatchDataReader(path: String, digits: Int, january_starts_at_0: Int)
       val askV: Double = in.readFloat()
       val bidV: Double = in.readFloat()
 
-      val newDate = new Timestamp(currentDate.getTime + milliseconds)
+      val newDate = currentDate + milliseconds * 1000L
 
-      return Row(currentTicker, newDate, ask, bid, askV, bidV)
+      return InternalRow(currentTicker, newDate, ask, bid, askV, bidV)
     } catch {
             // I just want to show it here, but basically it means: eat any exception thrown
       case _: EOFException =>
@@ -193,7 +187,7 @@ class BI5BatchDataReader(path: String, digits: Int, january_starts_at_0: Int)
 
   override def next(): Boolean = hasNext
 
-  override def get(): Row = {
+  override def get(): InternalRow = {
     val row_to_send = nextRow
     nextRow = getNextRow
     row_to_send
