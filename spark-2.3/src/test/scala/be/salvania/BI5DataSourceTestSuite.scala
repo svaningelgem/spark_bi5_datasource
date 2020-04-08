@@ -7,8 +7,8 @@ import java.util.TimeZone
 
 import org.apache.spark.sql.functions.{col, desc}
 import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
-import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.BeforeAndAfter
+import org.scalatest.funsuite.AnyFunSuite
 
 
 
@@ -226,5 +226,10 @@ class BI5DataSourceTestSuite
   test("Load a file with january set") {
     val df = spark.read.format("bi5").option("digits", DIGITS_JPY).option("january", 1).load(getPath("USDJPY/"))
     _check_if_df_is_ok(df, 1454, 1, FIRST_RECORD_JPY, LAST_RECORD_JPY)
+  }
+
+  test("Load and write back to parquet") {
+    val df = spark.read.format("bi5").option("digits", DIGITS_EUR).load(getPath("EURUSD/"))
+    df.write.mode("overwrite").parquet("/tmp/output.parquet")
   }
 }
