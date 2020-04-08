@@ -1,4 +1,13 @@
-# BI5 import into a Spark dataframe
+# DukasCopy's BI5 files import into a Spark dataframe
+
+# Help needed
+I know I'm not very good at Scala (understatement of the century!)... So if someone out there would take some pity on me (pretty pretty please *wink* *wink*)...
+So the things I still had in mind to clean things up:
+- make a common repository where:
+    * test resources are located
+    * test case is located
+- generalize/abstract the code. It's basically the same except for the Row <-> InternalRow differences.
+
 
 # Motivation
 I have a whole lot of Dukascopy's RAW data files. Recently I took up Spark learning and as such I wanted an easy way to load them all.
