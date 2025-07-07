@@ -1,4 +1,4 @@
-val sparkVersion = "2.4.5"
+val sparkVersion = "2.4.8"
 
 
 libraryDependencies ++= Seq(
