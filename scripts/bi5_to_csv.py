@@ -1,5 +1,6 @@
 import lzma
 import struct
+
 import pandas as pd
 
 
@@ -20,4 +21,5 @@ def bi5_to_df(filename, fmt):
 
 if __name__ == "__main__":
     import sys
-    bi5_to_df(sys.argv[1], '>3I2f')
+
+    bi5_to_df(sys.argv[1], ">3I2f")
