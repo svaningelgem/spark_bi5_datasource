@@ -1,7 +1,7 @@
 lazy val commonSettings = Seq(
   name         := "spark-bi5",
   version      := "0.1",
-  scalaVersion := "3.10.0",
+  scalaVersion := "3.10.1",
 
   assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false),
 
